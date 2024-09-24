@@ -5,26 +5,302 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# Librerías
+```{r}
+library(ggplot2)
+# Usamos una librería especializada para coeficiente de asimetría
+library(moments)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+# Lectura de Archivos
+Para este trabajo utilizaremos los datos utilizados en la clase anterior. Nos enfocaremos en la comparación entre bebedores y no bebedores. 
+```{r}
+hers <- read.table("../data/.csv",sep = ",",header = T)
+#Existen otras funciones como read.csv,read.csv2 o read.delim (sep= “,” “;” “\” respectivamente)
 ```
 
-## Including Plots
+# Exploración inicial de los datos
+Para observar pocos registros de nuestros datos podemos utilizar head() para los primeros registros o tail() para los últimos.
+```{r}
+# El parámetro n es el número de registros que se van a mostrar
+head(hers,n = 6)
+#
+tail(hers)
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```
+Para observar las dimensiones de nuestros datos podemos utilizar las funciones dim() o nrow() y ncol().
+```{r}
+dim(hers)
+# Número de registros 
+nrow(hers)
+# Número de atributos o características (columnas) 
+ncol(hers)
+```
+Podemos utilizar la función table() para contabilizar cuántos registros de cada clase tenemos. 
+```{r}
+table(hers$drinkany)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Separación de los datos
+Generamos 2 conjuntos de datos: uno para bebedores y otro para no bebedores (ignoraremos los registros que no tengan información).
+Enseguida dos maneras de hacer la generación de conjuntos de datos a partir de otros.
+```{r}
+drinkanyData.yes<-hers[hers$drinkany=="yes",]
+dim(drinkanyData.yes)
+#La diferencia entre usar which retorna los indices que cumplen la condicion y el otro es un vector booleano
+drinkanyData.no<-hers[which(hers$drinkany=="no"),]
+dim(drinkanyData.no)
+```
+Otras funciones utiles son sort y order que permiten ordenar un  lista de elementos.
+La función sort devuelve un vector ordenado de los valores (sin contar NA) de la lista y la función order devuelve el índice de los valores ordenados
+El siguiente ejemplo ordena los datos por edad.
+```{r}
+# para que sort devuelva el indice del valor y poder utilizarlo para ordenar un dataframe se utiliza el parametro index.return=T
+orden<-sort(drinkanyData.yes$age,index.return=T)$ix
+drinkanyData.yes<-drinkanyData.yes[orden,]
+head(drinkanyData.yes[,1:6])
+
+orden<-order(drinkanyData.no$age)
+drinkanyData.no<-drinkanyData.no[orden,]
+head(drinkanyData.no[,1:6])
+```
+
+# Estadística descriptiva
+
+## Medidas de tendencia central: Moda, media, mediana
+Calcularemos la media, moda y mediana de Triglicéridos(TG) para observar si hay diferencia entre bebedores y no bebedores
+```{r}
+#E liminamos los valores nulos para no tener errores
+drinkanyData.yes<-na.omit(drinkanyData.yes)
+drinkanyData.no<-na.omit(drinkanyData.no)
+media<-mean(drinkanyData.yes$TG)
+
+# R no tiene una funcion para calcular la moda pero se puede calcular con table y which
+moda.yes <- as.numeric(names(which.max(table(drinkanyData.yes$TG))))
+mediana<-median(drinkanyData.yes$TG)
+MMMyes<-c(media=media,moda=moda,mediana=mediana)
+
+media<-mean(drinkanyData.no$TG)
+modaT<-data.frame(table(drinkanyData.no$TG))
+moda<-modaT[which.max(modaT$Freq),1]
+mediana<-median(drinkanyData.no$TG)
+MMMno<-c(media=media,moda=moda,mediana=mediana)
+```
+```{r}
+dt<-data.frame(MMMyes,MMMno)
+dt
+```
+Como se puede observar, existen diferencias en ambos conjuntos de datos. Se observa un pequeño sesgo en la distribución de los datos. Intentemos observar un poco más la distribución de los datos de nuestro conjunto. 
+
+### Varianza y Desviación estándar
+```{r}
+varianza<-var(drinkanyData.yes$TG)
+desEst<-sd(drinkanyData.yes$TG)
+var_sd_yes<-c(var=varianza,des=desEst)
+
+varianza<-var(drinkanyData.no$TG)
+desEst<-sd(drinkanyData.no$TG)
+var_sd_no<-c(var=varianza,des=desEst)
+
+var_sd<-data.frame(var_sd_yes,var_sd_no)
+var_sd
+```
+
+
+## Cuantiles
+
+Los Cuantiles nos permiten dividirnuestros datos de tal manera que cada una de todas las partes tengan la misma cantidad de datos y permiten ver la distribución de nuestros datos. Los más utilizados son los cuartiles, deciles y percentiles. R tiene una función para calcular todos: quantile(). De esta manera podemos observar cómo se distribuyen los datos y algunos valores muy alejados de los datos (outliers)
+```{r}
+par(mfrow=c(2, 2))
+# quantile(data,prob=seq(0, 1, 1/X)) X es el numero de partes a dividir los datos
+plot(quantile(drinkanyData.no$TG, prob=seq(0, 1, 1/100)), xlab = "Porcentaje", ylab = "Triglicéridos", main="No Bebedores")
+plot(quantile(drinkanyData.yes$TG, prob=seq(0, 1, 1/100)), xlab = "Porcentaje", ylab = "Triglicéridos", main="Bebedores")
+
+# los Boxplots son buenos para mostrar los cuartiles
+boxplot(drinkanyData.no$TG, main="No Bebedores")
+boxplot(drinkanyData.yes$TG, main="Bebedores")
+
+```
+
+## Todas las medidas con Summary
+
+R tiene una función que permite visualizar de forma fácil todos estos cálculos: summary(). Esta función devuelve el valor mínimo, el valor máximo, los cuartiles 1,2,3 (los valores que ocupan el 25%,50% y 75%), la mediana y la media.
+
+```{r}
+summary_yes<-summary(drinkanyData.yes$TG)
+summary_no<-summary(drinkanyData.no$TG)
+summary_d<-data.frame(c(summary_no),c(summary_yes))
+summary_d
+```
+
+Summary tambien funciona en todos los datos de un dataframe.
+```{r}
+summary(drinkanyData.yes)
+```
+
+# Correlación de variables
+La covarianza es un valor que indica el grado de variación de 2 conjuntos de datos con respecto a su media y su versión normalizada es la correlación. 
+R cuenta con una función para calcular la correlación y covarianza entre 2 conjuntos de datos, cor(). 
+A continuación se correlacionó el índice de masa corporal, con el peso y Triglicéridos(TG). 
+```{r}
+dtCorr<-data.frame(BMI=drinkanyData.yes$BMI,Weight=drinkanyData.yes$weight,TG=drinkanyData.yes$TG)
+# Cov y Cor funcionan en un dataframe si todos los datos son numericos 
+# cov(dtCorr)
+```
+```{r}
+# el parametro method permite cambiar entre la correlacion a calcular "pearson" (default), "kendall", or "spearman" 
+print("Índice de correlación de Pearson")
+cor(dtCorr, method = "p")
+print("Índice de correlación de Spearman")
+cor(dtCorr, method = "s")
+print("Índice de correlación de Kendall")
+cor(dtCorr, method = "k")
+```
+
+Entre más cercano a 1 sea el valor de correlación, la relación entre las dos variables será más informativa.
+R también cuenta con una función para observar la correlación entre múltiples variables de un dataframa produciendo un diagrama de dispersión (scatterplot) por cada par de datos, pairs(),
+
+```{r}
+pairs(dtCorr)
+```
+Como podemos observar, el IMC y el peso correlacionan positivamente casi a la perfección (valor cercano a 1), algo que ya esperábamos. Por otra parte, los Triglicéridos(TG) no muestran una correlación con el IMC y al peso.
+
+# Distribución de los datos
+
+## Histogramas
+```{r}
+ggplot(drinkanyData.yes, aes(x = TG)) + 
+  geom_histogram(aes(y=..density..), binwidth = 2, color = "black", fill = "white") +
+  geom_density(alpha = 0.2, fill = "blue") + 
+  labs(title = "Histograma de los triglicéridos para bebedores", x = "Triglicéridos", y = "Recuento")
+```
+```{r}
+ggplot(drinkanyData.no, aes(x = TG)) + 
+  geom_histogram(aes(y=..density..), binwidth = 2, color = "black", fill = "white") +
+  geom_density(alpha = 0.2, fill = "blue") + 
+  labs(title = "Histograma de los triglicéridos para no bebedores", x = "Triglicéridos", y = "Recuento")
+```
+
+## Coeficiente de asimetría (skewness) y curtosis
+```{r}
+# Para la curtosis, R calcula el valor -3
+# Más información en https://www.statology.org/skewness-kurtosis-in-r/
+print("Asimetría de valores de triglicéridos para bebedores")
+skewness(drinkanyData.yes$TG)
+
+print("Asimetría de valores de triglicéridos para no bebedores")
+skewness(drinkanyData.no$TG)
+
+print("Kurtosis de valores de triglicéridos para bebedores")
+kurtosis(drinkanyData.yes$TG)
+print("Kurtosis de valores de triglicéridos para no bebedores")
+kurtosis(drinkanyData.no$TG)
+
+```
+
+# Distribuciones de probabilidad
+
+R permite generar simulaciones de datos con distintas distribuciones de probabilidad y cada una se identifica por un alias. Las más importantes son: 
+- binomial(binom)
+- Poisson(pois)
+- normal(norm)
+- exponencial(exp)
+- t de Student(t)
+- chi^2(chisq)
+- Distribución F(f)
+- uniforme(unif)
+
+Para la lista completa se puede ejecutar: help(Distributions).
+Para cada distribución hay 4 funciones relacionadas que se anotan como prefijo al alias de la función:
+- Función de distribución o probabilidad(p)
+- Función cuantílica(p) que regresa el percentil solicitado
+- Función de densidad (continuas) o de probabilidad (discretas) (d)
+- Números aleatorios (r)
+
+Estas funciones son muy útiles para generar grandes conjuntos de datos aleatorios con una distribución de nuestro interés y compararlos con nuestros datos o usarlos como un grupo de control. 
+
+## Distribución normal (gaussiana)
+Para más informacion de las funciones [norm()](https://r-coder.com/distribucion-normal-r/)
+Utilicemos la media y la desviación estándar de los datos de Bebedores para generar una distribución normal y compararlas.
+```{r}
+set.seed(10)
+
+# Creamos dataset con valores de triglicéridos para bebedores
+DatosTG<-drinkanyData.yes$TG
+# Obtenemos media y desv estándar de dataframes previamente creados.
+MediaTG<-summary_d$c.summary_yes[4]
+SdTG<-var_sd$var_sd_yes[2]
+
+# Más información del uso de estas funciones en: https://www.statology.org/dnorm-pnorm-rnorm-qnorm-in-r/
+# qnorm calcula el cuantil p, en este caso calcula los cuartiles de la distribución normal
+QuarNormal<-qnorm(p=seq(0, 1, 1/4), mean = MediaTG, sd = SdTG)
+# pnorm calcula la probabilidad de que una variable aleatoria sea menor o igual que el valor de q=cuartiles
+ProbNormal<-pnorm(q=QuarNormal, mean = MediaTG, sd = SdTG)
+
+# Para comparar, obtenemos los cuartiles de valores de triglicéridos
+QuarDatos<-quantile(drinkanyData.yes$TG, prob=seq(0, 1, 1/4))
+ProbDatos<-pnorm(q=QuarDatos, mean = MediaTG, sd = SdTG)
+
+# Juntamos todos los resultados para compararlos
+dt_norm_Vs_Datos<-data.frame(QuarDatos,QuarNormal,ProbDatos,ProbNormal)
+dt_norm_Vs_Datos
+```
+```{r}
+par(mfrow=c(1, 2))
+# Generamos un arreglo de longitud n con datos aleatorios que sigan una distribucion normal usando la media (mean) y desviación estándar (sd)
+Dnormal<-rnorm(n=1020, mean = MediaTG, sd = SdTG)
+# Creamos histograma con datos de distribución normal 
+hist(Dnormal, main = "Normal", freq = F, ylim =  c(0,0.008))
+# Generamos un funcion de densidad para una distribución normal
+x<-seq(0, 1020, length = 1020)
+distNorm<-dnorm(x=x,mean = MediaTG,sd = SdTG)
+# Agregamos al histograma una línea para indicar una función de densidad para una distribución normal
+lines(x, distNorm, col = "blue", lty = 1, lwd = 2)
+# Creamos histograma con valores de triglicéridos
+hist(DatosTG, main = "Triglicéridos", freq = F, ylim =  c(0,0.008))
+# Agregamos al histograma una línea para indicar una función de densidad para una distribución normal
+lines(x, distNorm, col = "blue", lty = 1, lwd = 2)
+```
+Estos gráficos nos muestran las distribuciones de los datos reales (valores de triglicéridos) y los datos generados por rnorm() para una distribución normal, junto con una curva de densidad normal. 
+A continuación se muestran algunas distribuciones. 
+
+## Exponencial y uniforme
+Para más formación de estas funciones en R 
+[Exponencial](https://r-coder.com/distribucion-uniforme-r/) y 
+[uniforme](https://r-coder.com/distribucion-exponencial-r/)
+```{r}
+x <- seq(-10, 10, 0.01)
+set.seed(10)
+par(mfrow=c(1, 2))
+#Exponencial 
+hist(rexp(1000), main = "n = 1000",
+     xlab = "", prob = TRUE)
+lines(x, dexp(x), col = "red", lwd = 2)
+#Uniforme
+hist(runif(1000), main = "n = 1000", xlim = c(-0.2, 1.25),
+     xlab = "", prob = TRUE)
+lines(x, dunif(x), col = "red", lwd = 2)
+```
+
+## Poisson y Binomial
+Para más formación de estas funciones en R
+[Poisson ](https://r-coder.com/distribucion-poisson-r/) y
+[Binomial](https://r-coder.com/distribucion-binomial-r/)
+```{r}
+par(mfrow=c(1, 2))
+x<-seq(0, 1, 0.001)
+#la función cuantil de la distribución de Poisson
+plot(qpois(x, lambda = 20),
+     main = "Poisson",
+     ylab = "Q(p)", xlab = "p",
+     type = "s", col = 3, xaxt = "n")
+axis(1, labels = seq(0, 1, 0.1), at = 0:10 * 100)
+
+# la función cuantil binomia size = 80, prob = 0.2
+plot(qbinom(x, size = 80, prob = 0.2),
+     main = "binomial",
+     ylab = "Q(p)", xlab = "p",
+     type = "s", col = 2, xaxt = "n")
+axis(1, labels = seq(0, 1, 0.1), at = 0:10 * 100)
+
+```
