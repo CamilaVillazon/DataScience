@@ -10,6 +10,12 @@ output: html_document
 library(ggplot2)
 # Usamos una librería especializada para coeficiente de asimetría
 library(moments)
+library(qdap) # manipulacion de datos
+library(e1071) # asimetría
+library(bestNormalize) # transformación de datos 
+library(fitdistrplus) # gráfica Cullen-Frey
+library(dslabs) # datos PCA
+library(factoextra) # gráficas PCA
 ```
 
 # Lectura de Archivos
@@ -110,7 +116,9 @@ A primera vista de acuerdo a esta análisis observamos lo siguiente:
 - En el peso observamos que la mayoría de las personas se encuentran entre 60kg y 80kg, también observamos valores atípicos abudantes en el caso de personas que pesan más de 100kg y escasos de personas que pesan menos de 40kg.
 - En cuanto a las presiones sistólica y diastólica se encuentran en niveles normales en su mayoría, pero también se observan valores muy atípicos en los extremos.
 
-Dados estas observaciones podemos decir que los datos varían mucho, por lo que sacamos la varianza y desviación estándar.
+## Varianza y desviación estándar
+
+Dados las observaciones anteriores podemos decir que los datos varían mucho, por lo que sacamos la varianza y desviación estándar.
 
 ```{r}
 
@@ -156,6 +164,178 @@ invisible(lapply(numeric_attributes, boxplots))
 
 ```
 
-Pendientes
-- Concluir estos boxplots
-- Distribución de los datos: histogramas, skewness y curtosis.
+Dados estos boxplots podemos observamos lo siguiente:
+
+- Respeto al boxplot de la edad vemos solo vemos dos outliers, lo cual no es nada preocupante.
+- Dado que todos los pacientes están en edad adulta resalta que hay muchos individuos con una estatura menor 147 cm que es el rango debajo del cual se considera enanismo, lo que significa que nuestro dataset tiene mucha gente enana.
+- Observamos una gran cantidad de lo pacientes que presentan sobrepeso y lo que resulta preocupante es que hay una pequeña cantidad de gente con un peso extremadamente bajo.
+- Respecto a la presión tanto cistólica como diastólica los outliers son muy extremos y no permite ver el ranro real.
+
+## Cuantiles
+```{r}
+par(mfrow=c(2, 2))
+
+# Inicializar el dataframe vacío con los cuantiles
+df_qs <- data.frame(Q1 = numeric(length(numeric_attributes)),
+                    Q2 = numeric(length(numeric_attributes)),
+                    Q3 = numeric(length(numeric_attributes)),
+                    O_up = numeric(length(numeric_attributes)),
+                    O_down = numeric(length(numeric_attributes)),
+                    row.names = numeric_attributes)
+
+
+# Definir la función para calcular las estadísticas
+qs <- function(var) {
+  quantiles <- quantile(cvd[[var]])
+  iqr <- IQR(cvd[[var]])
+  Q1 <- quantiles["25%"]
+  Q2 <- quantiles["50%"]
+  Q3 <- quantiles["75%"]
+  O_up <- Q3 + (1.5*iqr)
+  O_down <- Q1 - (1.5*iqr)
+
+    
+  # Asignar los resultados a la fila correspondiente de df_mmm
+  df_qs[var, ] <<- c(Q1 = Q1, Q2 = Q2, Q3 = Q3, O_up = O_up, O_down = O_down)
+}
+
+# Aplicar la función a cada elemento de numeric_attributes
+invisible(lapply(numeric_attributes, qs))
+
+df_qs
+
+
+```
+
+
+
+# Distribuciones de los datos
+
+```{r}
+# Función para crear un boxplot para cada variable
+hists <- function(var) {
+  print(
+    ggplot(cvd, aes_string(x = var)) + 
+      geom_histogram(aes(y=..density..), binwidth = 2, color = "black", fill = "white") + 
+      geom_density(alpha = 0.2, fill = "blue") +
+      labs(title = paste("Histogram of", var), x = "Values", y = "Density") + 
+      geom_vline(xintercept = mean(cvd[[var]], na.rm = TRUE), color = "red") + 
+      geom_vline(xintercept = median(cvd[[var]], na.rm = TRUE), color = "forestgreen")
+  )
+}
+
+# Aplicar la función a cada elemento de numeric_attributes
+invisible(lapply(numeric_attributes, hists))
+
+
+```
+## Coeficiente de asimetría (skewness) y curtosis
+```{r}
+
+df_sk <- data.frame(skew = numeric(length(numeric_attributes)),
+                    kur = numeric(length(numeric_attributes)),
+                    row.names = numeric_attributes)
+
+
+# Definir la función para calcular las estadísticas
+sk <- function(var) {
+  skew <- skewness(cvd[[var]])
+  kur <- kurtosis(cvd[[var]])
+    
+  # Asignar los resultados a la fila correspondiente de df_mmm
+  df_sk[var, ] <<- c(skew = skew , kur = kur)
+}
+
+# Aplicar la función a cada elemento de numeric_attributes
+invisible(lapply(numeric_attributes, sk))
+
+df_sk
+
+
+```
+Como podemos observar todas las variables presentan un curtosis leptocúrtica (mayor a 0), es decir muy centrada hacia la media. Respecto al skewness podemos observar que en la edad y estatura la mayoría de datos se extienden hacia la izquierda, mientras que para el resto de variables se extienden hacia la derecha.
+
+
+
+
+# Transformación de datos
+
+En la fase exploratorio de los datos observamos que en la edad hay muy pocos outliers (solos dos), pero entran en el mismo grupo de edad el resto de datos (adultez), por lo que consideramos no es necesaria modificar esa variable. 
+Respecto a la estatura observamos valores muy atípicos que no tienen sentido. La altura promedio del enanismo es 125 centímetros, por lo que alturas menores a un metro no congruentes y alturas mayores a 2 metros son poco fecuentes. Sin embargo algunos de las alturas atípicas se pueden deber a errores de medición. Lo mismo ocurre para el peso y las presiones sistólica y diastólica.
+
+Con el fin de minimizar errores de medición y no perder datos decidimos crear dos variables nuevas. La primera es el índice de masa corporal, BMI por sus siglas en inglés, que es el peso en kilogramos sobre la estatura en metros cuadrados, que se interpreta de la siguiente manera:
+
+- Menor a 18.5 significa un bajo peso.
+- Entre 18.5 y 25.9 es un peso normal.
+- Entre 25 y 29.9 es considerado sobrepeso.
+- 30 o más es obesidad.
+
+La segunda es la presión de pulso, la cual es la diferencia entre la presións sistólica y la diastólica, esta diferencia normalmente es de 40, asumiendo que la presión sea 120/80 mm/Hg.
+
+```{r}
+
+cvd$bmi <- cvd$weight/((cvd$height/100)**2)
+
+cvd$pulse <- cvd$ap_hi - cvd$ap_lo
+
+head(cvd)
+
+```
+**Medidas estadísticas**
+```{r}
+
+numeric_attributes <- c("age_year","height","weight","ap_hi","ap_lo", "bmi", "pulse")
+
+# Aplicar la función a cada elemento de numeric_attributes
+invisible(lapply(numeric_attributes, mmm))
+
+# Ver el resultado
+df_mmm
+
+
+```
+
+**Cuartiles**
+
+```{r}
+par(mfrow=c(2, 2))
+
+
+# Aplicar la función a cada elemento de numeric_attributes
+invisible(lapply(numeric_attributes, qs))
+
+df_qs
+
+
+```
+
+**Boxplots**
+
+```{r}
+
+invisible(lapply(c("bmi", "pulse"), boxplots))
+
+```
+**Eliminar outliers**
+
+```{r}
+cvd_original <- cvd
+
+cvd <- subset(cvd, (cvd$bmi <= 39.74288 & cvd$bmi >= 14.35445) & (cvd$pulse <= 65 & cvd$pulse >= 25))
+
+
+print("bmi")
+max(cvd$bmi)
+min(cvd$bmi)
+
+print("pulse")
+max(cvd$pulse)
+min(cvd$pulse)
+
+
+```
+
+Pendientes:
+
+- Discretización de bmi y pulse.
+
