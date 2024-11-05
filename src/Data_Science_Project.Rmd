@@ -16,6 +16,9 @@ library(bestNormalize) # transformación de datos
 library(fitdistrplus) # gráfica Cullen-Frey
 library(dslabs) # datos PCA
 library(factoextra) # gráficas PCA
+library(nortest)
+library(Rtsne)
+library(umap)
 ```
 
 # Lectura de Archivos
@@ -207,28 +210,6 @@ df_qs
 
 ```
 
-
-
-# Distribuciones de los datos
-
-```{r}
-# Función para crear un boxplot para cada variable
-hists <- function(var) {
-  print(
-    ggplot(cvd, aes_string(x = var)) + 
-      geom_histogram(aes(y=..density..), binwidth = 2, color = "black", fill = "white") + 
-      geom_density(alpha = 0.2, fill = "blue") +
-      labs(title = paste("Histogram of", var), x = "Values", y = "Density") + 
-      geom_vline(xintercept = mean(cvd[[var]], na.rm = TRUE), color = "red") + 
-      geom_vline(xintercept = median(cvd[[var]], na.rm = TRUE), color = "forestgreen")
-  )
-}
-
-# Aplicar la función a cada elemento de numeric_attributes
-invisible(lapply(numeric_attributes, hists))
-
-
-```
 ## Coeficiente de asimetría (skewness) y curtosis
 ```{r}
 
@@ -281,7 +262,7 @@ cvd$pulse <- cvd$ap_hi - cvd$ap_lo
 head(cvd)
 
 ```
-**Medidas estadísticas**
+## Medidas estadísticas
 ```{r}
 
 numeric_attributes <- c("age_year","height","weight","ap_hi","ap_lo", "bmi", "pulse")
@@ -295,7 +276,7 @@ df_mmm
 
 ```
 
-**Cuartiles**
+## Cuartiles
 
 ```{r}
 par(mfrow=c(2, 2))
@@ -309,14 +290,14 @@ df_qs
 
 ```
 
-**Boxplots**
+## Boxplots
 
 ```{r}
 
 invisible(lapply(c("bmi", "pulse"), boxplots))
 
 ```
-**Eliminar outliers**
+## Eliminar outliers
 
 ```{r}
 cvd_original <- cvd
@@ -335,7 +316,160 @@ min(cvd$pulse)
 
 ```
 
-Pendientes:
+## Discretización de datos 
+Para analizar el bmi y el pulso podemos discretizar estas variables de acuerdo a los criterios propios de cada una de ellas.
 
-- Discretización de bmi y pulse.
+Para el caso del bmi podemos agrupar a los pacientes de acuerdo al siguiente criterior anteriormente mencionado:
 
+- Menor a 18.5: bajo peso.
+- Entre 18.5 y 25: peso normal.
+- Entre 25 y 30: sobrepeso.
+- 30 o más: obesidad.
+```{r}
+cvd$bmi_clasification <- findInterval(cvd$bmi, c(0, 18.5, 25, 30, 40))
+
+cvd$bmi_clasification <- multigsub(sort(unique(cvd$bmi_clasification)), # patrón a buscar
+                           c("Bajo peso", "Peso normal", "Sobrepeso", "Obesidad"), 
+                           cvd$bmi_clasification) # objeto sobre el cual reemplazar
+head(cvd)
+```
+Respecto al pulso podemos clasificar a los pacientes de acuerdo al siguiente criterio:
+
+- Menor a 30: presión de pulso baja.
+- Entre 30 y 40: presión de pulso normal.
+- Entre 40 y 50: presión de pulso elevada.
+- Mayor a 50: presión de pulso alta.
+
+
+```{r}
+cvd$pulse_clasification <- findInterval(cvd$pulse, c(0, 30, 40, 50, 66))
+
+head(cvd)
+```
+
+
+
+
+
+
+## Distribuciones de los datos
+
+Graficamos y realizamos un test de Kolmogorov-Smirnov (KS) adaptado para más de 50 datos (lillie test) para verificar si nuestros datos numpericos siguen una distribución normal.
+```{r}
+
+par(mfrow = c(2,2))
+
+
+# Función para crear un boxplot para cada variable
+qq <- function(var) {
+    qqnorm(cvd[[var]], main = var)
+    qqline(cvd[[var]])
+    nor <- lillie.test(cvd[[var]])
+    print(
+      paste(var,"pvalue:", nor$p.value)
+    )
+}
+
+# Aplicar la función a cada elemento de numeric_attributes
+invisible(lapply(numeric_attributes, qq))
+
+
+```
+
+```{r}
+
+dist <- function(var) {
+  descdist(cvd[[var]], boot = 1000)  # Ejecuta descdist con una muestra de bootstrap
+  Sys.sleep(0.1)  # Pausa breve para asegurarnos de que la gráfica se ha generado
+  title(main = paste("\n\nDistribución de", var))  # Cambia el título
+}
+
+invisible(lapply(numeric_attributes, dist))
+
+
+
+```
+
+De acuerdo a lo observado en los gráficos y lo obtenido en el test podemos decir que ninguna variable sigue una distribución normal. 
+
+Al ver qué tipo de distribución siguen notamos lo siguiente:
+
+- La distribución de la variable edad se asemeja a una distribución uniforme.
+- En el caso de la altura su distribución está cerca de la normal, log normal y gamma, sin embargo, de acuerdo al test de KS no es normal pero en las gráficas de qqplot y de las distribuciones parece acercarse a una distribución normal.
+- Para el caso del peso parece tener una distribución gamma.
+- La distribución de la presión sistólica se asemeja bastante a una lognormal.
+- La distribución de la presión diastólica se acerca más a la de la logística.
+- El índice de masa corporal parece tener una distribución beta.
+- Para el caso del pulso parece también presentar una distribución beta.
+
+## Reducción de dimensionalidad
+
+Para reducir las dimensiones de nuestro análisis utilizaremos t-SNE y UMAP dado que nuestros datos no siguen una distribución normal.
+
+### t-SNE
+```{r}
+
+# 1. Selección de columnas numéricas relevantes (excluyendo `id`)
+data_for_tsne <- cvd[, c("age_year", "height", "weight", "ap_hi", "ap_lo", "bmi", "pulse")]
+
+# 2. Escalado de datos
+data_scaled <- scale(data_for_tsne)
+
+# 3. Creación de un índice lógico para las filas no duplicadas
+non_duplicates_index <- !duplicated(data_scaled)
+
+# 4. Eliminación de filas duplicadas
+data_scaled <- data_scaled[non_duplicates_index, ]
+
+# 5. Aplicación de t-SNE
+set.seed(42)  # para reproducibilidad
+tsne_results <- Rtsne(data_scaled, dims = 2, perplexity = 30, verbose = TRUE, max_iter = 500)
+
+# 6. Crear un data frame solo con los resultados de t-SNE
+tsne_data <- data.frame(tsne_results$Y)
+colnames(tsne_data) <- c("tSNE_1", "tSNE_2")
+tsne_data$cardio <- cvd$cardio[non_duplicates_index]  # Usar el índice de no duplicados
+
+# 7. Graficar usando ggplot2
+ggplot(tsne_data, aes(x = tSNE_1, y = tSNE_2, color = as.factor(cardio))) +
+  geom_point(alpha = 0.7) +
+  labs(color = "Cardio", title = "t-SNE de los datos") +
+  theme_minimal()
+
+
+```
+### UMAP
+
+```{r}
+
+# 1. Selección de columnas numéricas relevantes (excluyendo `id`)
+data_for_umap <- cvd[, c("age_year", "height", "weight", "ap_hi", "ap_lo", "bmi", "pulse")]
+
+# 2. Escalado de datos
+data_scaled <- scale(data_for_umap)
+
+# 3. Eliminación de filas duplicadas
+data_scaled <- data_scaled[!duplicated(data_scaled), ]
+
+# 4. Aplicación de UMAP
+library(umap)
+set.seed(42)  # para reproducibilidad
+umap_results <- umap(data_scaled)
+
+# 5. Crear un data frame con los resultados de UMAP
+umap_data <- data.frame(umap_results$layout)
+colnames(umap_data) <- c("UMAP_1", "UMAP_2")
+umap_data$cardio <- cvd$cardio[non_duplicates_index]  # Asegúrate de que el tamaño coincida
+
+# 6. Graficar usando ggplot2
+library(ggplot2)
+ggplot(umap_data, aes(x = UMAP_1, y = UMAP_2, color = as.factor(cardio))) +
+  geom_point(alpha = 0.7) +
+  labs(color = "Cardio", title = "UMAP de los datos") +
+  theme_minimal()
+
+
+
+```
+
+De acuerdo a los resultados obtenidos del t-SNE y UMAP la varianza no se explica totalmente por la presencia o ausencia de enfermedad cardiovascular, pero se observa una leve separación por esta variable.
