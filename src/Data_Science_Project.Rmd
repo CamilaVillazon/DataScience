@@ -19,6 +19,8 @@ library(factoextra) # gráficas PCA
 library(nortest)
 library(Rtsne)
 library(umap)
+library(coin)
+library(qdap) # manipulacion de datos
 ```
 
 # Lectura de Archivos
@@ -316,6 +318,7 @@ min(cvd$pulse)
 
 ```
 
+
 ## Discretización de datos 
 Para analizar el bmi y el pulso podemos discretizar estas variables de acuerdo a los criterios propios de cada una de ellas.
 
@@ -473,3 +476,111 @@ ggplot(umap_data, aes(x = UMAP_1, y = UMAP_2, color = as.factor(cardio))) +
 ```
 
 De acuerdo a los resultados obtenidos del t-SNE y UMAP la varianza no se explica totalmente por la presencia o ausencia de enfermedad cardiovascular, pero se observa una leve separación por esta variable.
+
+Finalmente guardaremos los datos para realizar la clasificación utilizando modelos en python.
+```{r}
+
+write.csv(cvd, "../data/cvd_transformed.csv", row.names = FALSE)
+
+
+```
+
+
+# Inferencia estadística
+
+
+```{r}
+cvd$cardio <- as.factor(cvd$cardio)
+
+inf_est <- function(var) {
+    print(ggplot(data = cvd, aes(x = cardio, y = !!sym(var), color = cardio)) + 
+            geom_boxplot() + 
+            theme_bw()
+    )
+  print(var)
+  print(fligner.test(cvd[[var]]~cvd$cardio))
+  
+  sep<-gsub("yes","Y", cvd[[var]])
+  sep<-gsub("no","N", cvd[[var]])
+  var_sep<-data.frame(dt=cvd[[var]], v=cvd$cardio)
+  print(wilcox_test(dt ~ v,data = var_sep, conf.int=0.95))
+  
+  
+  
+}
+
+# Aplicar la función a cada elemento de numeric_attributes
+invisible(lapply(numeric_attributes, inf_est))
+
+```
+De acuerdo a lo observado en los boxplots y las pruebas estadísitcas concluimos lo siguiente.
+
+- La varianza y media son diferentes en al caso de la edad y observamos que a mayor edad mayir incidencia de ennfermedades cardiovasculares.
+- Para la estatura la varianza es diferente, pero la media es igual para ambos grupos de pacientes, lo cual confirmamos con el boxplot, por tanto podemos decir que la estatura no influye en la incidencia de enfermedades cardiovasculares.
+- En el caso del peso, de acuerdo a lo observado en los resultados de las pruebas estadísticas la varianza y media son diferentes en los grupos de pacientes, lo cual podemos confirmar con el boxplot. Además en el gráfico de boxplot se observa que existe una mayor presencia de sobrepeso en pacientes con enfermedades cardiovasculares.
+- En las presiones tanto sistólica como diastólica se observa lo mismo: presentan una varianza y media diferentes, además de acuerdo al boxplot la presión en ambos casos suele ser  más alta en pacientes con enfermedades cardiovasculares.
+- En el bmi se aprecia que la varianza y media son diferentes, de acuerdo al boxplot el bmi suele ser más alto en personas con enfermedades cardiovascualres.
+- El puso presente una varianza y media diferente en ambos grupos y suele ser mucho más alto en personas con enfermedades cardiovasculares.
+
+En base a esto consideramos que todas las variables numéricas exepto la de edad son relevantes o influyen para determinar si existe enfermedad cardiovascular, para realizar nuestro modelo tomaremos en cuenta las variables edad, bmi y pulso, ya que el peso viene implícito en la variable bmi y las presiones (sistólica y diastólica) en el pulso.
+
+
+Ahora haremos lo mismo para las variables categóricas. Usaremos la prueba chi cuadrada para determina rsi existe una relación significativa. Si el valor p es menor que 0.05, entonces existe evidencia de una asociación significativa entre las variables.
+
+## Codificación
+
+```{r}
+cvd$gender <- multigsub(sort(unique(cvd$gender)), c("M", "H"), cvd$gender)
+cvd$cholesterol <- multigsub(sort(unique(cvd$cholesterol)), c("Normal", "Elevado", "Muy elevado"), cvd$cholesterol)
+cvd$gluc <- multigsub(sort(unique(cvd$gluc)), c("Normal", "Elevado", "Muy elevado"), cvd$gluc)
+cvd$smoke <- multigsub(sort(unique(cvd$smoke)), c("No", "Sí"), cvd$smoke)
+cvd$alco <- multigsub(sort(unique(cvd$alco)), c("No", "Sí"), cvd$alco)
+cvd$active <- multigsub(sort(unique(cvd$active)), c("Pasivo", "Activo"), cvd$active)
+cvd$cardio <- multigsub(sort(unique(cvd$cardio)), c("No", "Sí"), cvd$cardio)
+
+head(cvd)
+```
+
+```{r}
+categoric_attributes <- c("gender", "cholesterol", "gluc", "smoke", "alco", "active")
+
+inf_est <- function(var) {
+  tabla <- table(cvd[[var]], cvd$cardio)
+  
+  # Prueba de Chi-cuadrado
+  print(var)
+  print(chisq.test(tabla))
+  
+  print(ggplot(cvd, aes(x = cardio, fill = !!sym(var))) +
+  geom_bar(position = "fill") + # posición "fill" muestra proporciones
+  labs(y = "Proporción", x = "Cardio") +
+  theme_minimal())
+
+  
+  
+}
+
+# Aplicar la función a cada elemento de numeric_attributes
+invisible(lapply(categoric_attributes, inf_est))
+
+```
+De acuerdo a lo osbervado en en los gráficos de barras y la prueba chi cuadrada, podemos decir los siguiente:
+
+- Dado que el p-value obtenido con el género es mayor a 0.05 por lo que no existe una relación significativa con la incidencia en enfermedades cardiovasculares.
+- Para el resto de variables se observa una relación significativa de acuerdo a la prueba de chi cuadrada, a pesar de que en los bloxplots pueda observarse que son bastante similares en ambos grupos de pacientes estadísiticamente son diferentes y por tanto significativos. Estas son las variables que utilizaremos para nuestro modelo de predicción.
+
+
+En conclusión, de acuerdo a estos análisis podemos establecer las variables significativas que utilizaremos para la realización de nuestros modelos predictivos, las cuales son:
+
+- Edad (en años)
+- Colesterol
+- Glucosa
+- Fumador o no
+- Consumo de alcohol
+- Actividad física
+- Bmi
+- Pulso
+
+
+
+
