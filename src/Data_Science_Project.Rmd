@@ -485,6 +485,19 @@ write.csv(cvd, "../data/cvd_transformed.csv", row.names = FALSE)
 
 ```
 
+## Codificación
+
+```{r}
+cvd$gender <- multigsub(sort(unique(cvd$gender)), c("M", "H"), cvd$gender)
+cvd$cholesterol <- multigsub(sort(unique(cvd$cholesterol)), c("Normal", "Elevado", "Muy elevado"), cvd$cholesterol)
+cvd$gluc <- multigsub(sort(unique(cvd$gluc)), c("Normal", "Elevado", "Muy elevado"), cvd$gluc)
+cvd$smoke <- multigsub(sort(unique(cvd$smoke)), c("No", "Sí"), cvd$smoke)
+cvd$alco <- multigsub(sort(unique(cvd$alco)), c("No", "Sí"), cvd$alco)
+cvd$active <- multigsub(sort(unique(cvd$active)), c("Pasivo", "Activo"), cvd$active)
+cvd$cardio <- multigsub(sort(unique(cvd$cardio)), c("No", "Sí"), cvd$cardio)
+
+head(cvd)
+```
 
 # Inferencia estadística
 
@@ -525,21 +538,8 @@ De acuerdo a lo observado en los boxplots y las pruebas estadísitcas concluimos
 En base a esto consideramos que todas las variables numéricas exepto la de edad son relevantes o influyen para determinar si existe enfermedad cardiovascular, para realizar nuestro modelo tomaremos en cuenta las variables edad, bmi y pulso, ya que el peso viene implícito en la variable bmi y las presiones (sistólica y diastólica) en el pulso.
 
 
-Ahora haremos lo mismo para las variables categóricas. Usaremos la prueba chi cuadrada para determina rsi existe una relación significativa. Si el valor p es menor que 0.05, entonces existe evidencia de una asociación significativa entre las variables.
+Ahora haremos lo mismo para las variables categóricas. Usaremos la prueba chi cuadrada para determina si existe una relación significativa. Si el valor p es menor que 0.05, entonces existe evidencia de una asociación significativa entre las variables.
 
-## Codificación
-
-```{r}
-cvd$gender <- multigsub(sort(unique(cvd$gender)), c("M", "H"), cvd$gender)
-cvd$cholesterol <- multigsub(sort(unique(cvd$cholesterol)), c("Normal", "Elevado", "Muy elevado"), cvd$cholesterol)
-cvd$gluc <- multigsub(sort(unique(cvd$gluc)), c("Normal", "Elevado", "Muy elevado"), cvd$gluc)
-cvd$smoke <- multigsub(sort(unique(cvd$smoke)), c("No", "Sí"), cvd$smoke)
-cvd$alco <- multigsub(sort(unique(cvd$alco)), c("No", "Sí"), cvd$alco)
-cvd$active <- multigsub(sort(unique(cvd$active)), c("Pasivo", "Activo"), cvd$active)
-cvd$cardio <- multigsub(sort(unique(cvd$cardio)), c("No", "Sí"), cvd$cardio)
-
-head(cvd)
-```
 
 ```{r}
 categoric_attributes <- c("gender", "cholesterol", "gluc", "smoke", "alco", "active")
@@ -582,5 +582,21 @@ En conclusión, de acuerdo a estos análisis podemos establecer las variables si
 - Pulso
 
 
+```{r}
 
+# Calcular las frecuencias de cada categoría
+data_freq <- as.data.frame(table(cvd$cardio))
+colnames(data_freq) <- c("cardio", "frecuencia")
+
+# Crear el gráfico de pastel
+ggplot(data_freq, aes(x = "", y = frecuencia, fill = cardio)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  theme_minimal() +
+  labs(title = "Proporción de enfermedad cardiovascular") +
+  theme(axis.text.x = element_blank(), axis.ticks = element_blank())  # Elimina las marcas del eje
+
+
+
+```
 
